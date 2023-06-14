@@ -5,8 +5,9 @@ export const credits = {
   source: "https://gist.github.com/lkraider/f0888da30bc352f9d167dfa4f4fc8213",
 }
 
-export const gsCmd = "gs \
--o \"{{output}}\" \
+export const gsExec= "gs"
+
+export const gsArgs = " \
 -sDEVICE=pdfwrite \
 -dPDFSETTINGS=/prepress \
 -dSubsetFonts=true \
@@ -24,5 +25,15 @@ export const gsCmd = "gs \
 -dPreserveOPIComments=false \
 -dPreserveOverprintSettings=false \
 -dUCRandBGInfo=/Remove \
+-o \"{{output}}\" \
 -f \"{{input}}\" \
 "
+
+export const gsShortArgs = " \
+-sDEVICE=pdfwrite \
+-o \"{{output}}\" \
+-f \"{{input}}\" \
+-dDEBUG \
+"
+
+export const gsCmd = `${gsExec} ${gsArgs}`
