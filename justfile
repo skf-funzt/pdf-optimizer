@@ -10,4 +10,4 @@ verbose:
     @just run -v
 
 compile:
-    deno compile --allow-run --allow-read --allow-write src/main.ts
+    deno compile --allow-run --allow-read --allow-write --output ./pdf-optimizer src/main.ts
