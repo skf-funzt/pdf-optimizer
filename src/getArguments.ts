@@ -14,6 +14,11 @@ export function getArguments() {
       description: 'The output directory path to save all the compressed PDF files in.',
       convertor: Arguments.stringConvertor,
     },
+    'parallel': {
+      shortName: 'p',
+      description: 'The number of parallel processes to run.',
+      convertor: Arguments.numberConvertor,
+    },
     'verbose': {
       shortName: 'v',
       description: 'The output directory path to save all the compressed PDF files in.',
