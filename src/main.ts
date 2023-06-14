@@ -2,8 +2,8 @@ import { join } from "https://deno.land/std@0.191.0/path/mod.ts";
 import { ExpectedException } from "https://deno.land/x/allo_arguments@v6.0.6/mod.ts";
 import { readLines, writeAll } from "https://deno.land/std@0.104.0/io/mod.ts";
 import { readerFromStreamReader } from "https://deno.land/std@0.136.0/streams/conversion.ts";
-
 import { PromisePool } from "https://deno.land/x/promise_pool/index.ts";
+import { MultiProgressBar } from "https://deno.land/x/progress@v1.3.8/mod.ts";
 
 import { gsArgs, gsExec } from "./gs-cmd.ts"
 import { ArgumentsType, retrieveArgs } from "./retrieveArgs.ts";
@@ -66,6 +66,14 @@ let successCount = 0;
 let failCount = 0;
 //Create a counter for skipped files
 let skipCount = 0;
+
+const bars = new MultiProgressBar({
+  title: 'Optimizing PDFs',
+  // clear: true,
+  complete: "=",
+  incomplete: "-",
+  display: "[:bar] :text :percent :time :completed/:total",
+});
 
 // Create a new Promise Pool
 const pool = new PromisePool({ concurrency: args.parallel ?? 1 });
@@ -132,8 +140,51 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
     const { status, stderr, stdout } = command.spawn();
 
     // pipe the stdout and stderr to the console
-    pipeThrough(dirEntry.name, readerFromStreamReader(stdout.getReader()), Deno.stdout);
-    pipeThrough(dirEntry.name + " Error", readerFromStreamReader(stderr.getReader()), Deno.stderr);
+    // pipeThrough(dirEntry.name, readerFromStreamReader(stdout.getReader()), Deno.stdout);
+    // pipeThrough(dirEntry.name + " Error", readerFromStreamReader(stderr.getReader()), Deno.stderr);
+
+    const pipeToProgressBar = async (
+      prefix: string,
+      reader: Deno.Reader,
+    ) => {
+      let totalPages: number | undefined = undefined;
+      let currentPage: number | undefined = undefined;
+      // Create a text encoder
+      const encoder = new TextEncoder();
+      for await (const line of readLines(reader)) {
+        // If verbose is true, print the line with the prefix
+        if (args.verbose) console.log(`[${prefix}] ${line}`);
+
+        // Search the line for the progress percentage
+        // Get the total pages by using a regex with named groups
+        // Example output is `Processing pages 1 through 132`
+        const totalPagesMatch = line.match(/Processing pages (?<start>\d+) through (?<end>\d+)/)?.groups?.end;
+        totalPages = totalPagesMatch ? parseInt(totalPagesMatch) : totalPages;
+        // If verbose is true, log the total pages
+        if (args.verbose) console.log(`[${prefix}] Total pages: ${totalPages}`);
+        // Get the current page by using a regex with named groups
+        // Example output is `Page 1`
+        const currentPageMatch = line.match(/Page (?<page>\d+)/)?.groups?.page;
+        currentPage = currentPageMatch ? parseInt(currentPageMatch) : currentPage;
+        // If verbose is true, log the current page
+        if (args.verbose) console.log(`[${prefix}] Current page: ${currentPage}`);
+
+        // Send the information to the progress bar
+        // Render bars only if total pages is defined
+        if (totalPages && currentPage) {
+          bars.render([
+            {
+              completed: currentPage,
+              total: totalPages,
+              text: prefix,
+            }
+          ]);
+        }
+      }
+    }
+
+    // pipe the stdout and stderr to the progress bar
+    pipeToProgressBar(dirEntry.name, readerFromStreamReader(stdout.getReader()));
 
     const statusSync = await status;
     // // Execute the command
