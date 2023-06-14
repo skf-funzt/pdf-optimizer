@@ -1,6 +1,6 @@
 import { join } from "https://deno.land/std@0.191.0/path/mod.ts";
 import { ExpectedException } from "https://deno.land/x/allo_arguments@v6.0.6/mod.ts";
-import { readLines, writeAll } from "https://deno.land/std@0.104.0/io/mod.ts";
+import { readAll, readLines, writeAll } from "https://deno.land/std@0.104.0/io/mod.ts";
 import { readerFromStreamReader } from "https://deno.land/std@0.136.0/streams/conversion.ts";
 import { PromisePool } from "https://deno.land/x/promise_pool/index.ts";
 import { MultiProgressBar } from "https://deno.land/x/progress@v1.3.8/mod.ts";
@@ -44,6 +44,9 @@ try {
 // Create an AbortController to terminate subprocesses
 const abortController = new AbortController();
 
+//Create a variable aborted
+let aborted = false;
+
 // Register a signal listener for SIGINT to remove the output directory
 // This is to prevent the output directory from being left behind if the program is terminated
 Deno.addSignalListener("SIGINT", () => {
@@ -57,6 +60,8 @@ Deno.addSignalListener("SIGINT", () => {
   // Exit the program
   // Log a message to console
   console.log('Exiting program');
+  // Set aborted to true
+  aborted = true;
   Deno.exit(1);
 });
 
@@ -75,6 +80,12 @@ const bars = new MultiProgressBar({
   display: "[:bar] :text :percent :time :completed/:total",
 });
 
+// Create a type ProgressBarRenderOptions
+type ProgressBarRenderOption = Parameters<typeof bars.render>[0][0] | { completed: number }
+type ProgressBarRenderOptions = Array<ProgressBarRenderOption>
+// Declare an array of PRogressBarRenderOptions
+const barComponents: ProgressBarRenderOptions = []
+
 // Create a new Promise Pool
 const pool = new PromisePool({ concurrency: args.parallel ?? 1 });
 const promises: Array<Promise<void>> = [];
@@ -82,7 +93,7 @@ const promises: Array<Promise<void>> = [];
 // Read all files in the directory
 for await (const dirEntry of Deno.readDir(args.directory)) {
   const promise = async () => {
-    console.log(`Converting ${dirEntry.name}`);
+    if (args.verbose) console.log(`Converting ${dirEntry.name}`);
     // Check if the file is not a PDF file, log a message to console and continue
     if (!dirEntry.name.endsWith('.pdf')) {
       // Log a message to console if verbose is true
@@ -118,23 +129,6 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
         // env: Deno.env.toObject(),
       }
     )
-    // const command = new Deno.Command(
-    //   Deno.execPath(),
-    //   {
-    //     args: [
-    //       "run",
-    //       "--allow-run=gs",
-    //       "gsExec.ts",
-    //       `-i ${join(args.directory, dirEntry.name)}`,
-    //       `-o ${join(args.outDirectory, dirEntry.name)}`,
-    //     ],
-    //     signal: abortController.signal,
-    //     stdout: 'piped',
-    //     stderr: 'piped',
-    //     stdin: 'null',
-    //     cwd: Deno.cwd(),
-    //   }
-    // )
     // Spawn a subprocess and collect output
     // Wait for the subprocess to finish
     const { status, stderr, stdout } = command.spawn();
@@ -143,12 +137,21 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
     // pipeThrough(dirEntry.name, readerFromStreamReader(stdout.getReader()), Deno.stdout);
     // pipeThrough(dirEntry.name + " Error", readerFromStreamReader(stderr.getReader()), Deno.stderr);
 
+    // Encode the stderr into a string asynchronously
+    const stderrString = readAll(readerFromStreamReader(stderr.getReader()));
+
     const pipeToProgressBar = async (
       prefix: string,
       reader: Deno.Reader,
     ) => {
       let totalPages: number | undefined = undefined;
-      let currentPage: number | undefined = undefined;
+      let currentPage = 0;
+      let progressBarRenderOption: ProgressBarRenderOption = {
+        completed: currentPage,
+        total: totalPages,
+        text: prefix,
+      };
+      const barComponentsIndex = barComponents.push(progressBarRenderOption) - 1;
       // Create a text encoder
       const encoder = new TextEncoder();
       for await (const line of readLines(reader)) {
@@ -171,14 +174,15 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
 
         // Send the information to the progress bar
         // Render bars only if total pages is defined
-        if (totalPages && currentPage) {
-          bars.render([
-            {
-              completed: currentPage,
-              total: totalPages,
-              text: prefix,
-            }
-          ]);
+        if (totalPages) {
+          // If verbose is true, log the progress bar render option update
+          if (args.verbose) console.log(`[${prefix}] Updating progress bar render option`);
+          // Update the progressBarRenderOption
+          barComponents[barComponentsIndex] = {
+            completed: currentPage,
+            total: totalPages,
+            text: prefix,
+          };
         }
       }
     }
@@ -196,7 +200,7 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
       successCount++;
     } else {
       // Log a message to console
-      console.log(`Failed to convert ${dirEntry.name} with error: ${statusSync.code}/${statusSync.signal}/${statusSync.success}`);
+      console.log(`Failed to convert ${dirEntry.name} with error:\n\tcode: ${statusSync.code}\n\tsuignal: ${statusSync.signal}\n\tsuccess: ${statusSync.success}\n\tstderr: ${stderrString}`);
       // Delete the output file
       try {
         await Deno.remove(join(args.outDirectory!, dirEntry.name));
@@ -212,7 +216,15 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
   promises.push(pool.open(promise));
 }
 
-await Promise.all(promises)
+let allPromisesDone = false;
+Promise.all(promises).then(() => allPromisesDone = true);
+
+// While awaiting allPRomises, we render the bars
+while (!allPromisesDone && !abortController.signal.aborted) {
+  bars.render(barComponents);
+  // Delay rerendering the bars by awaiting a timeout for 100ms
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
 
 // Print the result of the conversion by using the patterns successCount, failCount and skipCount
 console.log(`Converted ${successCount} files, skipped ${skipCount} files and failed to convert ${failCount} files.`);

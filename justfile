@@ -4,7 +4,7 @@ default:
 extrasDefault := ''
 
 run extras=extrasDefault:
-    deno run --allow-run=gs,sh --allow-read --allow-write src/main.ts -d='./../magazines' -o='./example' -p=8 {{extras}}
+    deno run --allow-run=gs,sh --allow-read --allow-write src/main.ts {{extras}} -d='./../magazines' -o='./example' -p=4
 
 verbose:
     @just run -v
