@@ -3,20 +3,17 @@ import { getArguments } from "./getArguments.ts";
 
 export type ArgumentsType = ReturnType<typeof getArguments>;
 
-export let readArgs: ArgumentsType | undefined;
+export let args: ArgumentsType | undefined;
 
 export function retrieveArgs() {
-  if(readArgs === undefined) {
+  if(args === undefined) {
     throw new ExpectedException('Arguments are undefined');
   }
-  const args: ArgumentsType = readArgs;
-  // Log the file path
-  console.log('File path: ', args.directory);
-  return args;
+  return args as ArgumentsType;
 }
 
 try {
-  readArgs = getArguments();
+  args = getArguments();
 } catch (error) {
   Arguments.rethrowUnprintableException(error);
 }

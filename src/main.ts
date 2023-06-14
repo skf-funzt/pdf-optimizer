@@ -44,9 +44,6 @@ try {
 // Create an AbortController to terminate subprocesses
 const abortController = new AbortController();
 
-//Create a variable aborted
-let aborted = false;
-
 // Register a signal listener for SIGINT to remove the output directory
 // This is to prevent the output directory from being left behind if the program is terminated
 Deno.addSignalListener("SIGINT", () => {
@@ -61,7 +58,6 @@ Deno.addSignalListener("SIGINT", () => {
   // Log a message to console
   console.log('Exiting program');
   // Set aborted to true
-  aborted = true;
   Deno.exit(1);
 });
 
@@ -81,10 +77,19 @@ const bars = new MultiProgressBar({
 });
 
 // Create a type ProgressBarRenderOptions
-type ProgressBarRenderOption = Parameters<typeof bars.render>[0][0] | { completed: number }
-type ProgressBarRenderOptions = Array<ProgressBarRenderOption>
+type ProgressBarRenderOption = Parameters<typeof bars.render>[0][0] | { completed: number, total: number }
 // Declare an array of PRogressBarRenderOptions
-const barComponents: ProgressBarRenderOptions = []
+const mapBarComponents = new Map<string, ProgressBarRenderOption>();
+
+// Create a total count of files
+let totalCount = 1;
+// Create an overall progress bar
+const overallBar: () => ProgressBarRenderOption = () => ({
+  completed: successCount + failCount + skipCount,
+  total: totalCount,
+  text: 'Overall Progress',
+})
+
 
 // Create a new Promise Pool
 const pool = new PromisePool({ concurrency: args.parallel ?? 1 });
@@ -92,6 +97,10 @@ const promises: Array<Promise<void>> = [];
 
 // Read all files in the directory
 for await (const dirEntry of Deno.readDir(args.directory)) {
+  // Increase the total count
+  const index = totalCount;
+  totalCount++;
+  // Create a promise for each file
   const promise = async () => {
     if (args.verbose) console.log(`Converting ${dirEntry.name}`);
     // Check if the file is not a PDF file, log a message to console and continue
@@ -146,12 +155,13 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
     ) => {
       let totalPages: number | undefined = undefined;
       let currentPage = 0;
-      let progressBarRenderOption: ProgressBarRenderOption = {
+      const progressBarRenderOption: ProgressBarRenderOption = {
         completed: currentPage,
         total: totalPages,
         text: prefix,
       };
-      const barComponentsIndex = barComponents.push(progressBarRenderOption) - 1;
+      // Add the bar component to the map
+      mapBarComponents.set(prefix, progressBarRenderOption);
       // Create a text encoder
       const encoder = new TextEncoder();
       for await (const line of readLines(reader)) {
@@ -177,18 +187,18 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
         if (totalPages) {
           // If verbose is true, log the progress bar render option update
           if (args.verbose) console.log(`[${prefix}] Updating progress bar render option`);
-          // Update the progressBarRenderOption
-          barComponents[barComponentsIndex] = {
+          // Update the progressBarRenderOption in the map
+          mapBarComponents.set(prefix, {
+            ...progressBarRenderOption,
             completed: currentPage,
             total: totalPages,
-            text: prefix,
-          };
+          });
         }
       }
     }
 
     // pipe the stdout and stderr to the progress bar
-    pipeToProgressBar(dirEntry.name, readerFromStreamReader(stdout.getReader()));
+    pipeToProgressBar(`${index} ${dirEntry.name}`, readerFromStreamReader(stdout.getReader()));
 
     const statusSync = await status;
     // // Execute the command
@@ -221,6 +231,14 @@ Promise.all(promises).then(() => allPromisesDone = true);
 
 // While awaiting allPRomises, we render the bars
 while (!allPromisesDone && !abortController.signal.aborted) {
+  // Render the bars by converting the map intp an array
+  const barComponents = [
+    overallBar(),
+    ...Array.from(mapBarComponents.values())
+    // Remove finished processes
+    .filter((it) => it.completed !== it.total)
+  ];
+  // Render the bars
   bars.render(barComponents);
   // Delay rerendering the bars by awaiting a timeout for 100ms
   await new Promise((resolve) => setTimeout(resolve, 100));

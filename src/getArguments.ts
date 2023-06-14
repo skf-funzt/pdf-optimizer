@@ -24,29 +24,6 @@ export function getArguments() {
       description: 'The output directory path to save all the compressed PDF files in.',
       convertor: Arguments.booleanConvertor,
     },
-    // 'myNumber': {
-    //     shortName: 'n',
-    //     description: 'This is a number flag.',
-    //     convertor: Arguments.numberConvertor,
-    //     default: () => 0
-    // },
-    // 'myBoolean': {
-    //     shortName: 'b',
-    //     description: 'This is a boolean flag.',
-    //     convertor: Arguments.booleanConvertor,
-    // },
-    // 'myCustom': {
-    //     shortName: 'c',
-    //     description: 'This is a custom flag.',
-    //     convertor: value => {
-    //         if (value === undefined) return undefined;
-    //         return `🐰 — ${value} — 🐭`;
-    //     },
-    // },
-    // 'myDeprecated': {
-    //     convertor: Arguments.stringConvertor,
-    //     excludeFromHelp: true
-    // },
   })
     .setDescription(`
       This is a sample program to optimize PDF files.\n
