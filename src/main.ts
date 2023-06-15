@@ -50,8 +50,8 @@ Deno.addSignalListener("SIGINT", () => {
   // Log the termination reason
   console.log('\nTerminated by SIGINT');
   // Log a message to console
-  console.log(`Removing output directory ${args.outDirectory}`);
-  Deno.remove(args.outDirectory!, { recursive: true });
+  // console.log(`Removing output directory ${args.outDirectory}`);
+  // Deno.remove(args.outDirectory!, { recursive: true });
   // Terminating all subprocesses
   abortController.abort("SIGINT");
   // Exit the program
@@ -110,6 +110,20 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
       skipCount++;
       return;
     }
+    // Check if the file already exists in the output directory, skip if it does
+    try {
+      const existingFile = await Deno.stat(join(args.outDirectory!, dirEntry.name));
+      // Continue if the file exists
+      if (existingFile.isFile) {
+        // Log a message to console if verbose is true
+        if (args.verbose) console.log(`Skipping ${dirEntry.name}`);
+        skipCount++;
+        return;
+      }
+    } catch (_) {
+       // Do nothing
+    }
+
     // Use the gsCmd constant to execute the Ghostscript command
     // First repalce the {{input}} and {{output}} placeholders with the file name
     const cmdArgs = gsArgs.replace('{{input}}', join(args.directory!, dirEntry.name)).replace('{{output}}', join(args.outDirectory!, dirEntry.name));
@@ -162,8 +176,7 @@ for await (const dirEntry of Deno.readDir(args.directory)) {
       };
       // Add the bar component to the map
       mapBarComponents.set(prefix, progressBarRenderOption);
-      // Create a text encoder
-      const encoder = new TextEncoder();
+      // Analyze the stdout and update the bars accordingly
       for await (const line of readLines(reader)) {
         // If verbose is true, print the line with the prefix
         if (args.verbose) console.log(`[${prefix}] ${line}`);
